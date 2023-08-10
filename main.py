@@ -288,7 +288,7 @@ with st.sidebar:
     st.write(f'streamlit version : {st.__version__}')
     st.divider()
 
-    API_KEY = st.session_state['API_KEY'] = st.text_input('**API KEY**')
+    API_KEY = st.session_state['API_KEY'] = st.text_input('**API KEY**', type = 'password')
     if API_KEY:
         login_disabled = False
     else:
