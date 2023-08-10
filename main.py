@@ -175,7 +175,7 @@ class Plagiarism(Originality):
             return
         for url in urls:
             
-            status, api_result = self.get_plagiarism_from_url(url, title = url, aiModelVersion = self.aiModelVersion, st = st)
+            status, api_result = self.get_plagiarism_from_url(url, title = url, aiModelVersion = self.aiModelVersion)
             st.write(f'Done, {status}, {url}')
 
             if status == 200:
