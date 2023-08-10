@@ -259,21 +259,21 @@ def reset_session_state_value(session_state_key, value ):
     st.session_state[session_state_key] = value
 
 # Adjust layout to remove padding
-st.markdown("""
-        <style>
-               .block-container {
-                    padding-top: 0rem;
-                    padding-bottom: 0rem;
-                    padding-left: 0rem;
-                    padding-right: 0rem;
-                }
-               .css-1y4p8pa {
-                    width: 90%;
-                    padding: 6rem 1rem 10rem;
-                    max-width: 100%;
-                }
-        </style>
-        """, unsafe_allow_html=True)
+# st.markdown("""
+#         <style>
+#                .block-container {
+#                     padding-top: 0rem;
+#                     padding-bottom: 0rem;
+#                     padding-left: 0rem;
+#                     padding-right: 0rem;
+#                 }
+#                .css-1y4p8pa {
+#                     width: 90%;
+#                     padding: 6rem 1rem 10rem;
+#                     max-width: 100%;
+#                 }
+#         </style>
+#         """, unsafe_allow_html=True)
 
 if 'plag' not in st.session_state:
     st.session_state['plag'] = Plagiarism()
