@@ -4,7 +4,6 @@ from collections.abc import MutableMapping
 import concurrent.futures
 from concurrent.futures import as_completed
 import streamlit as st
-from streamlit.web.server.websocket_headers import _get_websocket_headers
 import pandas as pd
 import yaml
 import os
@@ -335,10 +334,14 @@ download_container = st.container()
 donwload_cols_top = download_container.columns(1)
 donwload_cols_bot = download_container.columns([1,5])
 
-tab1, tab2, tab3, tab4 = st.tabs([':file_folder: URLs', ':pushpin: Summary per url', ':mag_right: All matchs', ':gear: Logs'])
+tab1, tab2, tab3, tab4 = st.tabs([':file_folder: URLs', ':pushpin: Summary per url', ':mag_right: All matchs', ':gear: Logs (scan only)'])
 # tab1, tab2, tab3 = st.tabs([':file_folder: URLs', ':pushpin: Summary per url', ':mag_right: All matchs'])
 
-if urls:
+# if urls:
+if not urls:
+    tab1.caption('Upload urls to see them here')
+else:
+    tab1.caption('Urls to scan for plagiarism')
     urls = tab1.data_editor(
         urls, 
         num_rows = 'dynamic', 
@@ -352,10 +355,10 @@ if urls:
             max_chars=100,)
             }
         )
-    
-    tab1.write(urls)
-else:
-    tab1.caption('Upload urls to see them here')
+
+# tab1.write(urls)
+# else:
+#     tab1.caption('Upload urls to see them here')
 
 if 'summaries' in plag.__dict__:
     summary_df = pd.DataFrame.from_records(plag.summaries)
