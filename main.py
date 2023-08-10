@@ -317,7 +317,7 @@ with st.sidebar:
         else:
             st.markdown(f":red[File not valid!]")
             st.markdown(f"Columns in file : {cols}")
-            st.markdown(f"Columns needed : ['urls']")
+            st.markdown(f"Columns needed : {plag.CSV_COLUMNS}")
     else:
         urls = []
 
