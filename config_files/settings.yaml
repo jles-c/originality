@@ -1,0 +1,7 @@
+MAX_WORKERS : 5
+NB_WORDS : 200
+MIN_WORDS_COUNT : 3
+aiModelVersion : 1
+API_KEY : ""
+API_URL : "https://api.originality.ai/api/v1"
+CSV_COLUMNS : ['url']
