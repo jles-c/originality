@@ -96,12 +96,13 @@ class Plagiarism(Originality):
         
         self.status_list = []
         self.api_result_list = []
+        self.result_log = []
         
         if not self.logged:
             print("Not logged. Please log in.")
         
 
-    def get_clean_text_from_html(self, text, nb_words):
+    def get_clean_text_from_html(self, html, nb_words):
         """
         Extract text from html content and returns the concatenated text until the specified number of words is reached.
 
@@ -118,16 +119,20 @@ class Plagiarism(Originality):
             - Tags' text with a word count less than or equal to Plagiarism.MIN_WORDS_COUNT (default to 3) is excluded.
         """
 
-        text_split = []
-        words_split = []
-        soup = BeautifulSoup(text, 'html.parser')
+        soup = BeautifulSoup(html, 'html.parser')
         soup_text = soup.get_text(separator="||", strip=True)
         soup_split = soup_text.split("||")
 
-        for text in soup_split:
+        self.text = clean_text = self.clean_splitted_text(text_list = soup_split, nb_words = nb_words)
+        
+        return clean_text
+
+    def clean_splitted_text(self, text_list, nb_words):
+        text_split = []
+        words_split = []
+
+        for text in text_list:
             if text in text_split:  # Exclude tags's text if it matches exactly with another one
-                continue
-            elif len(text.split()) <= self.MIN_WORDS_COUNT:  # Exclude tags' text if it's too short
                 continue
             else:
                 text_split.append(text)
@@ -138,7 +143,14 @@ class Plagiarism(Originality):
         self.text = clean_text = " ".join(text_split)
         return clean_text
 
-    def get_soup_from_url(self, url):
+    def get_clean_text_from_str(self, content, nb_words):
+
+        content_split = content.split()
+        print(content_split)
+        self.text = clean_text = self.clean_splitted_text(text_list = content_split, nb_words = nb_words)
+        return clean_text
+
+    def get_content_from_url(self, url):
         """
         Extracts html content from a given URL and returns it as a BeautifulSoup soup.
 
@@ -160,14 +172,23 @@ class Plagiarism(Originality):
             "Accept" : "*/*"
             }
         res = requests.get(url, headers = headers)
-        soup = BeautifulSoup(res.content, 'html.parser')
+        content = res.content
         
-        return soup
+        return content
+
+    def content_is_soup_or_str(self, content):
+        soup = BeautifulSoup(content, 'html.parser')
+        if soup.get_text() == content:
+            content_type = 'str'
+        else:
+            content_type = 'html'
+        
+        return content_type
 
     def get_plagiarism_from_url(self, url, title, aiModelVersion):
 
-        soup = self.get_soup_from_url(url = url)
-        text = self.get_clean_text_from_html(text = soup, nb_words = self.NB_WORDS)
+        content = self.get_content_from_url(url = url)
+        text = self.get_clean_text_from_html(html = content, nb_words = self.NB_WORDS)
 
         # Call the originality.ai API
         url_api = self._build_api_url('scan/plag')
@@ -184,6 +205,7 @@ class Plagiarism(Originality):
         status, api_result, _ = self._get_api_result(response)
         self.status_list.append(status)
         self.api_result_list.append(api_result)
+        self.result_log.append({'status':status, 'api_result':api_result, 'payload':payload})
         
         return status, api_result
     
@@ -243,8 +265,14 @@ class Plagiarism(Originality):
     
     def get_plagiarism_from_content(self, content, aiModelVersion):
 
-        text = self.get_clean_text_from_html(text = content, nb_words = self.NB_WORDS)
-
+        content_type = self.content_is_soup_or_str(content)
+        if content_type == 'html':
+            text = self.get_clean_text_from_html(html = content, nb_words = self.NB_WORDS)
+        elif content_type == 'str':
+            text = self.get_clean_text_from_str(content = content, nb_words = self.NB_WORDS)
+        else:
+            raise Exception
+        
         # Call the originality.ai API
         url_api = self._build_api_url('scan/plag')
         api_headers = self._api_headers(self.API_KEY)
@@ -257,6 +285,7 @@ class Plagiarism(Originality):
         status, api_result, _ = self._get_api_result(response)
         self.status_list.append(status)
         self.api_result_list.append(api_result)
+        self.result_log.append({'status':status, 'api_result':api_result, 'payload':payload, 'content_type':content_type, 'content':content})
         
         return status, api_result
     
@@ -441,7 +470,10 @@ donwload_cols_top = download_container.columns(1)
 donwload_cols_bot = download_container.columns([1,1,3])
 
 # tab1, tab2, tab3, tab4 = st.tabs([':file_folder: URLs', ':pushpin: Summary per url', ':mag_right: All matchs', ':gear: Logs (scan only)'])
-tab1, tab2, tab3 = st.tabs([':file_folder: URLs & contents', ':pushpin: Summary (per scan)', ':mag_right: All matchs'])
+tab1, tab2, tab3, tab4 = st.tabs([':file_folder: URLs & contents', ':pushpin: Summary (per scan)', ':mag_right: All matchs', ':gear: Logs'])
+
+if tab4.checkbox('Display logs'):
+    tab4.write(plag.result_log)
 
 # Display URLs in tab1
 with tab1.expander('Urls to scan for plagiarism'):
@@ -472,13 +504,12 @@ with tab1.expander('contents to scan for plagiarism'):
         # hide_index = False, 
         use_container_width = True,
         column_config={
-        "value": st.column_config.LinkColumn(
+        "value": st.column_config.TextColumn(
             "content",
             help="Contents to scan for plagiarism. You can edit, delete (check box on the left), or add ('+' below) contents",
             )
             }
         )
-
 
 # Display summary in tab2
 if 'summaries' in plag.__dict__:
