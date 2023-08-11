@@ -5,3 +5,4 @@ aiModelVersion : 1
 API_KEY : ""
 API_URL : "https://api.originality.ai/api/v1"
 CSV_COLUMNS : ['url']
+CSV_COLUMNS_CONTENT : ['content']

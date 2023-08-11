@@ -8,6 +8,7 @@ import pandas as pd
 import yaml
 import os
 import time
+from datetime import datetime, timedelta
 
 
 class Originality:
@@ -91,6 +92,7 @@ class Plagiarism(Originality):
         self.MIN_WORDS_COUNT = self.settings['MIN_WORDS_COUNT']
         self.aiModelVersion = self.settings['aiModelVersion']
         self.CSV_COLUMNS = self.settings['CSV_COLUMNS']
+        self.CSV_COLUMNS_CONTENT = self.settings['CSV_COLUMNS_CONTENT']
         
         self.status_list = []
         self.api_result_list = []
@@ -99,35 +101,26 @@ class Plagiarism(Originality):
             print("Not logged. Please log in.")
         
 
-    def get_text_from_url(self, url, nb_words):
+    def get_clean_text_from_html(self, text, nb_words):
         """
-        Extracts text content from a given URL and returns the concatenated text until the specified number of words is reached.
+        Extract text from html content and returns the concatenated text until the specified number of words is reached.
 
         Args:
-            url (str): The URL of the webpage to extract text from.
+            text (str): html string to extract text from.
             nb_words (int): The maximum number of words to include in the output text.
 
         Returns:
             str: The concatenated text from the webpage, truncated to contain at most 'nb_words' words.
 
         Note:
-            - The function makes use of the 'requests' library and 'BeautifulSoup' to fetch and parse the webpage content.
+            - The function makes use of 'BeautifulSoup' to fetch and parse the content.
             - HTML tags' text that exactly matches another tag's text is excluded.
             - Tags' text with a word count less than or equal to Plagiarism.MIN_WORDS_COUNT (default to 3) is excluded.
         """
-        
+
         text_split = []
         words_split = []
-        self.url = url
-        headers={
-            "User-Agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.55 Safari/537.36",
-            "referer" : "https://www.google.com/",
-            "Accept-Language" : "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7,es;q=0.6",
-            "Accept_Encoding" : "gzip, deflate, br",
-            "Accept" : "*/*"
-            }
-        res = requests.get(url, headers = headers)
-        soup = BeautifulSoup(res.content, 'html.parser')
+        soup = BeautifulSoup(text, 'html.parser')
         soup_text = soup.get_text(separator="||", strip=True)
         soup_split = soup_text.split("||")
 
@@ -145,9 +138,36 @@ class Plagiarism(Originality):
         self.text = clean_text = " ".join(text_split)
         return clean_text
 
+    def get_soup_from_url(self, url):
+        """
+        Extracts html content from a given URL and returns it as a BeautifulSoup soup.
+
+        Args:
+            url (str): The URL of the webpage to extract text from.
+
+        Returns:
+            str: The concatenated text from the webpage, truncated to contain at most 'nb_words' words.
+
+        Note:
+            - The function makes use of the 'requests' library and 'BeautifulSoup' to fetch and parse the webpage content.
+        """
+        self.url = url
+        headers={
+            "User-Agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.55 Safari/537.36",
+            "referer" : "https://www.google.com/",
+            "Accept-Language" : "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7,es;q=0.6",
+            "Accept_Encoding" : "gzip, deflate, br",
+            "Accept" : "*/*"
+            }
+        res = requests.get(url, headers = headers)
+        soup = BeautifulSoup(res.content, 'html.parser')
+        
+        return soup
+
     def get_plagiarism_from_url(self, url, title, aiModelVersion):
 
-        text = self.get_text_from_url(url = url, nb_words = self.NB_WORDS)
+        soup = self.get_soup_from_url(url = url)
+        text = self.get_clean_text_from_html(text = soup, nb_words = self.NB_WORDS)
 
         # Call the originality.ai API
         url_api = self._build_api_url('scan/plag')
@@ -217,7 +237,58 @@ class Plagiarism(Originality):
         self.all_matchs = all_matchs
 
         end = time.time()
-        self.duration = duration = end - start
+        self.duration = duration = timedelta(seconds=(round(end - start)))
+        
+        return summaries, all_matchs, duration
+    
+    def get_plagiarism_from_content(self, content, aiModelVersion):
+
+        text = self.get_clean_text_from_html(text = content, nb_words = self.NB_WORDS)
+
+        # Call the originality.ai API
+        url_api = self._build_api_url('scan/plag')
+        api_headers = self._api_headers(self.API_KEY)
+        payload = {
+            "content": text,
+            "aiModelVersion": aiModelVersion
+        }
+        
+        response = requests.post(url_api, headers=api_headers, json=payload)
+        status, api_result, _ = self._get_api_result(response)
+        self.status_list.append(status)
+        self.api_result_list.append(api_result)
+        
+        return status, api_result
+    
+    def get_plagiarism_from_contents_concurrent(self, contents, st):
+        start = time.time()
+        summaries = []
+        all_matchs = []
+        if not contents:
+            st.write(f':red[Please upload contents]')
+            return
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers = self.MAX_WORKERS) as executor:
+        
+                # submit tasks and collect futures
+                futures = [executor.submit(self.get_plagiarism_from_content, content = content, aiModelVersion = self.aiModelVersion) for content in contents]
+                # process task results as they are available
+                for future in as_completed(futures):
+                # retrieve the result
+                    future.result()
+        
+                for status, api_result in zip(self.status_list, self.api_result_list):
+                    if status == 200:
+                        summary, matchs = self.process_result(api_result)
+                        summaries.append(summary)
+                        all_matchs.extend(matchs)
+                   
+        self.summaries = summaries
+        self.all_matchs = all_matchs
+
+        end = time.time()
+        self.duration = duration = timedelta(seconds=(round(end - start)))
+        
         return summaries, all_matchs, duration
     
     def process_result(self, api_result):
@@ -254,6 +325,20 @@ class Plagiarism(Originality):
                 break
         
         return check, cols, urls
+    
+    def load_contents_from_csv(self,file):
+        df = pd.read_csv(file)
+        cols = df.columns.to_list()
+        contents = []
+        check = False
+        
+        if cols == self.CSV_COLUMNS_CONTENT:
+            check = True
+            for col in self.CSV_COLUMNS_CONTENT:
+                contents = df[col].to_list()
+                break
+        
+        return check, cols, contents
             
 def reset_session_state_value(session_state_key, value ):
     st.session_state[session_state_key] = value
@@ -280,13 +365,13 @@ if 'plag' not in st.session_state:
 
 plag = st.session_state['plag']
 
-
-# st.write(_get_websocket_headers())
-
 with st.sidebar:
     st.title(':robot_face: :violet[Plagiarism] for SEO :robot_face:')
     st.write(f'streamlit version : {st.__version__}')
+    
+    
     st.divider()
+
 
     API_KEY = st.session_state['API_KEY'] = st.text_input('**API KEY**', type = 'password')
     if API_KEY:
@@ -301,65 +386,101 @@ with st.sidebar:
     
     cols_top = st.columns([1,3])
     cols_bot = st.columns(1)
+   
     with cols_top[0]:
         st.button('Log in', on_click = plag.login, args = [API_KEY,cols_bot[0]], disabled=login_disabled)
+
     with cols_top[1]:
         st.markdown(f"logged : **{plag.logged}**")
 
+
     st.divider()
 
-    uploaded_file = st.file_uploader('**Upload urls csv**', type='csv', help="Only one column named 'url'")
+# Upload urls csv and instantiate contents list
+    uploaded_file = st.file_uploader('**Upload :green[urls csv]**', type='csv', help="Only one column named 'url'")
     if uploaded_file:
-        check_file, cols, urls = plag.load_urls_from_csv(uploaded_file)
+        check_file, cols_urls, urls = plag.load_urls_from_csv(uploaded_file)
         
         if check_file:
             st.markdown(":green[File uploaded correctly!]")
         else:
             st.markdown(f":red[File not valid!]")
-            st.markdown(f"Columns in file : {cols}")
+            st.markdown(f"Columns in file : {cols_urls}")
             st.markdown(f"Columns needed : {plag.CSV_COLUMNS}")
     else:
         urls = []
 
-st.header("Plagiarism scan")
-st.caption("Using urls from csv file")
+# Upload contents csv and instantiate contents list
+    uploaded_contents = st.file_uploader('**Upload :blue[contents csv]**', type='csv', help="Only one column named 'content'")
+    if uploaded_contents:
+        check_file_contents, cols_contents, contents = plag.load_contents_from_csv(uploaded_contents)
+        
+        if check_file_contents:
+            st.markdown(":green[File uploaded correctly!]")
+        else:
+            st.markdown(f":red[File not valid!]")
+            st.markdown(f"Columns in file : {cols_contents}")
+            st.markdown(f"Columns needed : {plag.CSV_COLUMNS_CONTENT}")
+    else:
+        contents = []
 
-cols_main_top = st.columns([2,2,4])
-cols_main_top[1].button("Reset plagiarism value", on_click=reset_session_state_value, args = ['plag', Plagiarism()])
-plag.NB_WORDS = cols_main_top[2].slider("Nb words :", min_value = 100, max_value = 4000, value = plag.NB_WORDS, step = 50)
-cols_main_top[2].write(plag.NB_WORDS)
+st.header("Plagiarism scan")
+
+cols_main_top = st.columns([1,1,1,4])
+cols_main_bot = st.columns([1,1,1,4])
+cols_main_top[2].button("Reset results", on_click=reset_session_state_value, args = ['plag', Plagiarism()])
+plag.NB_WORDS = cols_main_top[3].slider("Nb words :", min_value = 100, max_value = 4000, value = plag.NB_WORDS, step = 50)
+cols_main_top[3].write(plag.NB_WORDS)
+
+
 st.divider()
+
 
 download_container = st.container()
 donwload_cols_top = download_container.columns(1)
-donwload_cols_bot = download_container.columns([1,5])
+donwload_cols_bot = download_container.columns([1,1,3])
 
-tab1, tab2, tab3, tab4 = st.tabs([':file_folder: URLs', ':pushpin: Summary per url', ':mag_right: All matchs', ':gear: Logs (scan only)'])
-# tab1, tab2, tab3 = st.tabs([':file_folder: URLs', ':pushpin: Summary per url', ':mag_right: All matchs'])
+# tab1, tab2, tab3, tab4 = st.tabs([':file_folder: URLs', ':pushpin: Summary per url', ':mag_right: All matchs', ':gear: Logs (scan only)'])
+tab1, tab2, tab3 = st.tabs([':file_folder: URLs & contents', ':pushpin: Summary (per scan)', ':mag_right: All matchs'])
 
-# if urls:
-if not urls:
-    tab1.caption('Upload urls to see them here')
-else:
-    tab1.caption('Urls to scan for plagiarism')
-    urls = tab1.data_editor(
+# Display URLs in tab1
+with tab1.expander('Urls to scan for plagiarism'):
+    if not urls:
+        tab1.caption('Upload urls to see them here')
+    else:
+        urls = st.data_editor(
+            urls, 
+            num_rows = 'dynamic', 
+            # hide_index = False, 
+            use_container_width = True,
+            column_config={
+            "value": st.column_config.LinkColumn(
+                "url",
+                help="Urls to scan for plagiarism. You can edit, delete (check box on the left), or add ('+' below) urls",
+                validate="^https://.*",
+                max_chars=100,)
+                }
+            )
+
+with tab1.expander('contents to scan for plagiarism'):
+    if not contents:    
+        st.caption('Upload contents to see them here')
+    else:
+        contents = st.data_editor(
         urls, 
         num_rows = 'dynamic', 
         # hide_index = False, 
         use_container_width = True,
         column_config={
         "value": st.column_config.LinkColumn(
-            "url",
-            help="Urls to scan for plagiarism. You can edit, delete (check box on the left), or add ('+' below) urls",
-            validate="^https://.*",
-            max_chars=100,)
+            "content",
+            help="Contents to scan for plagiarism. You can edit, delete (check box on the left), or add ('+' below) contents",
+            )
             }
         )
 
-# tab1.write(urls)
-# else:
-#     tab1.caption('Upload urls to see them here')
 
+# Display summary in tab2
 if 'summaries' in plag.__dict__:
     summary_df = pd.DataFrame.from_records(plag.summaries)
     donwload_cols_bot[0].download_button("Download summary", data = summary_df.to_csv(), file_name = 'summary.csv')
@@ -367,6 +488,7 @@ if 'summaries' in plag.__dict__:
 else:
     tab2.subheader('Nothing here ... :eyes: ')
 
+# Display matchs in tab3
 if 'all_matchs' in plag.__dict__:
     matches_df = pd.DataFrame.from_records(plag.all_matchs)
     donwload_cols_bot[1].download_button("Download matches", data = matches_df.to_csv(), file_name = 'matches.csv')
@@ -374,10 +496,17 @@ if 'all_matchs' in plag.__dict__:
 else:
     tab3.subheader('Nothing here ... :eyes: ')
 
+# Scan button (after defining containers where we print results)
+# cols_main_top[0].button("scan", on_click=plag.get_plagiarism_from_urls, args = [urls, tab4], disabled=scan_disabled)
+# cols_main_top[0].button("scan (fast)", on_click=plag.get_plagiarism_from_urls_concurrent, args = [urls, cols_main_top[0]], disabled=scan_disabled)
 
-cols_main_top[0].button("scan", on_click=plag.get_plagiarism_from_urls, args = [urls, tab4], disabled=scan_disabled)
-cols_main_top[0].button("scan (fast)", on_click=plag.get_plagiarism_from_urls_concurrent, args = [urls, cols_main_top[0]], disabled=scan_disabled)
+cols_main_top[0].button(":green[scan urls]", on_click=plag.get_plagiarism_from_urls_concurrent, args = [urls, cols_main_top[0]], disabled=scan_disabled)
+cols_main_top[0].caption("Using :green[urls]")
+cols_main_top[1].button(":blue[scan contents]", on_click=plag.get_plagiarism_from_contents_concurrent, args = [contents, cols_main_top[0]], disabled=scan_disabled)
+cols_main_top[1].caption("Using :blue[contents]")
 
+# Print duration of execution
 if 'duration' in plag.__dict__:
-    cols_main_top[0].write(f'duration : {round(plag.duration)} secs')
+    cols_main_bot[0].write(f'**Scan duration** :')
+    cols_main_bot[1].write(plag.duration)
 
