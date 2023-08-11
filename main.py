@@ -467,7 +467,7 @@ with tab1.expander('contents to scan for plagiarism'):
         st.caption('Upload contents to see them here')
     else:
         contents = st.data_editor(
-        urls, 
+        contents, 
         num_rows = 'dynamic', 
         # hide_index = False, 
         use_container_width = True,
